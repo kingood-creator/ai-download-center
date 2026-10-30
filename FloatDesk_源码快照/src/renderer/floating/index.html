@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' file: http: https: data:; style-src 'unsafe-inline';" />
+    <title>FloatDesk</title>
+    <style>
+      :root {
+        --theme: #3b82f6;
+        /* 渐变叠加色：不单独指定时退化成主色，也就是纯色圆点 */
+        --theme2: #3b82f6;
+        --grad-angle: 145deg;
+        --glass-opacity: 0.55;
+        --dot-size: 64px;
+        --ring-radius: 150px;
+        --icon-size: 44px;
+        --menu-opacity: 0.9;
+        --show-labels: 1;
+        --reduce-motion: 0;
+      }
+      * { box-sizing: border-box; }
+      /* 输入类控件必须可选中/可粘贴：外层可能设了 user-select:none，这里显式覆盖回来 */
+      input, textarea, select, [contenteditable="true"] {
+        -webkit-user-select: text; user-select: text;
+      }
+
+      html, body {
+        margin: 0; padding: 0; width: 100%; height: 100%;
+        background: transparent; overflow: hidden;
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif;
+        -webkit-user-select: none; user-select: none;
+      }
+      #stage { position: absolute; inset: 0; }
+
+      /*
+       * 中心圆点：主色 --theme → 叠加色 --theme2 的双色渐变（角度 --grad-angle），
+       * 上面再盖一层左上角高光。--theme2 等于 --theme 时就退化成纯色，和以前一样。
+       */
+      #dot {
+        position: absolute; left: 50%; top: 50%;
+        width: var(--dot-size); height: var(--dot-size);
+        transform: translate(-50%, -50%);
+        border-radius: 50%;
+        /* 先给一条不依赖 color-mix 的纯色兜底，再叠一层带明暗与渐变的版本 */
+        background:
+          radial-gradient(circle at 32% 28%, rgba(255,255,255,0.9), rgba(255,255,255,0) 42%),
+          linear-gradient(var(--grad-angle), var(--theme), var(--theme2));
+        background:
+          radial-gradient(circle at 32% 28%, rgba(255,255,255,0.9), rgba(255,255,255,0) 42%),
+          linear-gradient(var(--grad-angle),
+            color-mix(in srgb, var(--theme) 62%, #ffffff) 0%,
+            var(--theme) 45%,
+            var(--theme2) 100%);
+        /* 两圈光晕：主色的近场 + 叠加色的远场，渐变感在桌面背景上也看得出来 */
+        box-shadow:
+          0 0 18px color-mix(in srgb, var(--theme) 55%, transparent),
+          0 0 30px color-mix(in srgb, var(--theme2) 32%, transparent),
+          0 6px 20px rgba(0,0,0,0.45);
+        cursor: grab; z-index: 5;
+      }
+      #dot:active { cursor: grabbing; }
+      /* 圆点动画：由 body 上的 anim-* 类切换（脉冲 / 呼吸 / 能量环 / 无） */
+      #dot .pulse {
+        position: absolute; inset: 0; border-radius: 50%;
+        display: none; pointer-events: none;
+      }
+      /* 脉冲（默认）：柔光一圈圈向外扩散 */
+      .anim-pulse #dot .pulse {
+        display: block;
+        box-shadow: 0 0 0 0 color-mix(in srgb, var(--theme) 45%, transparent);
+        animation: pulse 2.6s infinite;
+      }
+      @keyframes pulse {
+        0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--theme) 45%, transparent); }
+        70% { box-shadow: 0 0 0 16px transparent; }
+        100% { box-shadow: 0 0 0 0 transparent; }
+      }
+      /* 呼吸：圆点本体缓缓缩放 + 变亮，像在呼吸 */
+      .anim-breathing #dot {
+        animation: breathe 4.2s ease-in-out infinite;
+      }
+      @keyframes breathe {
+        0%, 100% { transform: translate(-50%, -50%) scale(1); filter: brightness(1) saturate(1); }
+        50% { transform: translate(-50%, -50%) scale(1.07); filter: brightness(1.14) saturate(1.1); }
+      }
+      /* 能量环：亮环从圆点向外扩散并淡出，两条错峰环更有「能量」感 */
+      .anim-energy #dot .pulse {
+        display: block;
+        border: 2px solid color-mix(in srgb, var(--theme) 72%, #ffffff);
+        box-shadow: 0 0 12px color-mix(in srgb, var(--theme) 60%, transparent);
+        animation: energy-ring 2s cubic-bezier(.2,.6,.3,1) infinite;
+      }
+      .anim-energy #dot::after {
+        content: ''; position: absolute; inset: 0; border-radius: 50%;
+        border: 2px solid color-mix(in srgb, var(--theme2, var(--theme)) 72%, #ffffff);
+        box-shadow: 0 0 12px color-mix(in srgb, var(--theme2, var(--theme)) 55%, transparent);
+        display: block; pointer-events: none;
+        animation: energy-ring 2s cubic-bezier(.2,.6,.3,1) infinite;
+        animation-delay: 1s;
+      }
+      @keyframes energy-ring {
+        0% { transform: scale(1); opacity: 0.9; }
+        100% { transform: scale(1.95); opacity: 0; }
+      }
+
+      /* 环形菜单容器 */
+      #menu {
+        position: absolute; inset: 0; pointer-events: none;
+        opacity: 0; transform: scale(0.85);
+        transition: opacity 0.18s ease, transform 0.18s ease;
+      }
+      #menu.open { opacity: 1; transform: scale(1); pointer-events: none; }
+      .menu-item {
+        position: absolute; width: var(--icon-size); height: var(--icon-size);
+        margin-left: calc(var(--icon-size) / -2); margin-top: calc(var(--icon-size) / -2);
+        border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        background: rgba(20,24,40, var(--menu-opacity));
+        border: 1px solid color-mix(in srgb, var(--theme) 30%, rgba(255,255,255,0.18));
+        box-shadow: 0 6px 18px rgba(0,0,0,0.4);
+        backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+        color: #e8ecf6; font-size: calc(var(--icon-size) * 0.5);
+        cursor: pointer; z-index: 6;
+        pointer-events: auto;
+      }
+      /* 悬停时用主题色描一圈，和圆点呼应 */
+      .menu-item:hover {
+        border-color: color-mix(in srgb, var(--theme) 70%, #ffffff);
+        box-shadow: 0 6px 18px rgba(0,0,0,0.4), 0 0 0 2px color-mix(in srgb, var(--theme) 45%, transparent);
+      }
+      .menu-item img { width: 70%; height: 70%; border-radius: 8px; object-fit: cover; }
+      /* 没有原生图标的项目（网页/快捷键/内置动作）：emoji 套一层 macOS 风格圆角方块，
+         和真应用图标（img）摆在一起观感一致 */
+      .menu-item .ico-tile {
+        width: 74%; height: 74%;
+        display: flex; align-items: center; justify-content: center;
+        border-radius: 26%;
+        font-size: calc(var(--icon-size) * 0.4);
+        line-height: 1;
+        background: linear-gradient(160deg, rgba(255,255,255,0.24), rgba(255,255,255,0.05));
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.35), 0 2px 6px rgba(0,0,0,0.3);
+        text-shadow: 0 1px 2px rgba(0,0,0,0.35);
+      }
+      .menu-item .lbl {
+        position: absolute; top: calc(100% + 4px); left: 50%; transform: translateX(-50%);
+        white-space: nowrap; font-size: 11px; color: #cdd5e6;
+        background: rgba(10,12,22,0.7); padding: 1px 6px; border-radius: 6px;
+        display: none;
+      }
+      #menu.show-labels .menu-item .lbl { display: block; }
+
+      /* 空场景提示（项目被全部删除/停用时的兜底，避免菜单空白一片） */
+      .empty-hint {
+        position: absolute; left: 50%; top: calc(50% + 78px); transform: translate(-50%, 0);
+        width: 78%; text-align: center; font-size: 12px; line-height: 1.6; color: #cdd5e6;
+        background: rgba(12,15,26,0.82); border: 1px solid rgba(255,255,255,0.12);
+        padding: 14px 12px; border-radius: 12px; pointer-events: none;
+      }
+
+      /*
+       * 执行反馈（替代原来的绿色文字 toast）：圆点正中的对勾/叉号 + 一圈扩散光环。
+       * 成功=绿、失败=红、普通=主题色，全部无文字。复用保存提示那种「淡入→停留→淡出」节奏。
+       */
+      #exec-fx {
+        position: absolute; left: 50%; top: 50%;
+        width: var(--dot-size); height: var(--dot-size);
+        transform: translate(-50%, -50%);
+        display: flex; align-items: center; justify-content: center;
+        pointer-events: none; z-index: 8; opacity: 0;
+        --fx-color: #4ade80;
+      }
+      #exec-fx .ring {
+        position: absolute; inset: 0; border-radius: 50%;
+        border: 2px solid var(--fx-color);
+        opacity: 0;
+      }
+      #exec-fx .ico {
+        font-size: calc(var(--dot-size) * 0.46); line-height: 1;
+        color: var(--fx-color);
+        transform: scale(0.3); opacity: 0;
+        filter: drop-shadow(0 1px 3px rgba(0,0,0,0.55));
+      }
+      #exec-fx.play { opacity: 1; }
+      #exec-fx.play .ring { animation: fx-ring 0.72s ease-out forwards; }
+      #exec-fx.play .ico  { animation: fx-ico  0.72s ease-out forwards; }
+      @keyframes fx-ring {
+        0%   { transform: scale(0.55); opacity: 0.9; }
+        100% { transform: scale(2.4);  opacity: 0; }
+      }
+      @keyframes fx-ico {
+        0%   { transform: scale(0.3); opacity: 0; }
+        35%  { transform: scale(1.18); opacity: 1; }
+        68%  { transform: scale(1);    opacity: 1; }
+        100% { transform: scale(1);    opacity: 0; }
+      }
+      /* 圆点本体的轻微回弹，强化「被触发」的感觉 */
+      #dot.exec-kick { animation: fx-kick 0.4s ease-out; }
+      @keyframes fx-kick {
+        0% { transform: translate(-50%, -50%) scale(1); }
+        40% { transform: translate(-50%, -50%) scale(0.9); }
+        100% { transform: translate(-50%, -50%) scale(1); }
+      }
+
+      /*
+       * 右键圆点弹出的场景选择：场景行在上，最下面是分隔线 + 原右键菜单入口
+       * （打开设置 / 隐藏悬浮台 / 退出）。内容超高时可滚动（滚动条隐藏）。
+       * 行为：悬停高亮，点击场景立即切换；点击入口执行对应动作。
+       */
+      #scene-picker {
+        position: absolute; inset: 8px;
+        z-index: 9; display: none;
+        flex-direction: column;
+        overflow-y: auto; scrollbar-width: none;
+        background: rgba(12,15,26,0.9);
+        border: 1px solid color-mix(in srgb, var(--theme) 35%, rgba(255,255,255,0.16));
+        border-radius: 12px; padding: 12px 10px 14px;
+        backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+        box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+      }
+      #scene-picker::-webkit-scrollbar { display: none; }
+      #scene-picker.open { display: flex; animation: sp-in 0.14s ease-out; }
+      @keyframes sp-in {
+        0% { opacity: 0; transform: scale(0.9); }
+        100% { opacity: 1; transform: scale(1); }
+      }
+      .sp-title {
+        flex: 0 0 auto;
+        font-size: 10px; color: #8b93a8; text-align: center;
+        padding: 2px 0 9px; letter-spacing: 1px;
+      }
+      .sp-row {
+        flex: 0 0 auto;
+        display: block; width: 100%;
+        border: 0; border-radius: 8px;
+        background: transparent; color: #e8ecf6;
+        font: 12px/1 -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif;
+        /* 上下内边距由设置「选区文字边距」控制（--sp-row-pad，默认 12px） */
+        padding: var(--sp-row-pad, 12px) 10px; margin: 2px 0; cursor: pointer; text-align: center;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      .sp-row:hover {
+        background: color-mix(in srgb, var(--theme) 28%, rgba(255,255,255,0.06));
+      }
+      .sp-row.cur {
+        color: var(--theme); font-weight: 600;
+        background: color-mix(in srgb, var(--theme) 22%, rgba(255,255,255,0.05));
+      }
+      .sp-row.cur::after { content: ' ✓'; }
+      .sp-row.act { color: #cdd5e6; }
+      .sp-sep {
+        flex: 0 0 auto; height: 1px; margin: 8px 10px;
+        background: rgba(255,255,255,0.14);
+      }
+      .reduce-motion #scene-picker.open { animation: none; }
+
+      /* 减少动态效果：关闭圆点所有动画（含呼吸 / 能量环 / 脉冲）与执行反馈动画 */
+      .reduce-motion #dot, .reduce-motion #dot .pulse, .reduce-motion #dot::after { animation: none !important; }
+      .reduce-motion #exec-fx { transition: none; }
+      @media (prefers-reduced-motion: reduce) {
+        #exec-fx.play .ring, #exec-fx.play .ico, #dot.exec-kick { animation: none; }
+        #exec-fx.play .ico { opacity: 1; }
+      }
+
+      /*
+       * 悬浮球顶部场景名标签：圆点上方一条小药丸，显示【当前场景名】（如「全局场景」）。
+       * 需求：展开菜单顶部文字一律是场景名，切换 / 新建场景后也跟着变（渲染进程读
+       * currentScene().name 动态画，不写死）。原来的「链接窗口提示」逻辑保留（ActionRegistry
+       * 仍用它决定快捷键发到哪个前台窗口），只是这条药丸不再显示窗口名、改显示场景名。
+       *
+       * 样式按用户给的参考图定成【全局统一】：淡紫磨砂胶囊 + 纯白粗体字 + 一圈亮边，
+       * 和场景无关 —— 边框/底色一律不掺 --theme，所以换场景、新建场景长得都一样
+       * （以前边框混了 38% 主题色，每个场景的提示框颜色都不同，看起来像两套 UI）。
+       * 只有两个全局设置还能微调：--linked-bg-opacity（磨砂浓度，0.1–1 映射到 6%–62% 淡紫）
+       * 与 --linked-fg（文字颜色，默认纯白）。
+       *
+       * 为什么底色用「淡紫」而不是参考图那种更白的磨砂：把同一套样式摆在
+       * 深紫 / 深色 / 浅色 / 花色 四种桌面下比过，纯白磨砂在浅色桌面上白字几乎看不见；
+       * 淡紫 62% 这一档在四种背景上白字都读得清，深紫桌面上又和参考图基本一致。
+       *
+       * 位置默认在圆点正上方；JS 按真实占位改写 top/left 时也做过渡，移动时不跳变。
+       */
+      .linked-app {
+        position: absolute; left: 50%; top: calc(50% - var(--dot-size) / 2 - 26px);
+        transform: translateX(-50%);
+        max-width: 240px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        display: flex; align-items: center; gap: 5px;
+        font-size: 12px; line-height: 1; font-weight: 700; letter-spacing: 0.2px;
+        color: var(--linked-fg, #ffffff);
+        background: rgba(160, 166, 224, calc(var(--linked-bg-opacity, 1) * 0.62));
+        border: 1px solid rgba(255, 255, 255, 0.46);
+        padding: 5px 11px; border-radius: 999px;
+        backdrop-filter: blur(16px) saturate(1.25);
+        -webkit-backdrop-filter: blur(16px) saturate(1.25);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.42),
+          inset 0 -1px 0 rgba(255, 255, 255, 0.10),
+          0 6px 18px rgba(10, 12, 30, 0.26);
+        text-shadow: 0 1px 2px rgba(12, 14, 32, 0.45);
+        pointer-events: none; z-index: 7;
+        opacity: 0; transition: opacity 0.18s ease, top 0.18s ease, left 0.18s ease;
+      }
+      /* 减少动态效果：位置移动也别做动画，直接跳过去 */
+      .reduce-motion .linked-app { transition: opacity 0.18s ease; }
+      .linked-app:not(.hidden) { opacity: 1; }
+      .linked-app.hidden { display: none; }
+      /* 箭头比文字再重一档，参考图里 ↗ 是实心粗箭头 */
+      .linked-app .arrow { font-weight: 800; opacity: 0.96; }
+      /* 收起态（未展开菜单）也常驻显示，提示当前链接目标 */
+      .linked-app .name { font-weight: 700; }
+    </style>
+  </head>
+  <body>
+    <div id="stage">
+      <div id="dot"><div class="pulse"></div></div>
+      <div id="exec-fx"><span class="ring"></span><span class="ico">✓</span></div>
+      <div id="menu"></div>
+      <div id="scene-picker"></div>
+      <!-- 悬浮球链接到的目标窗口提示：让用户知道「正在操控哪个窗口」 -->
+      <div id="linked-app" class="linked-app hidden"></div>
+    </div>
+    <!-- 菜单音效引擎（shared 目录，和设置页共用一份；必须排在 app.js 之前） -->
+    <script src="../shared/sound.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

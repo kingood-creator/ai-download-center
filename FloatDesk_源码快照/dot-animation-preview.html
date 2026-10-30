@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>悬浮球圆点动画预览</title>
+<style>
+  :root {
+    --theme: #3b82f6;
+    --theme2: #6366f1;
+    --grad-angle: 145deg;
+    --dot-size: 72px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 28px;
+    background: radial-gradient(circle at 30% 20%, #1b2030, #0b0e16 70%);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+    color: #e8ecf6;
+  }
+  /* 与 FloatDesk 悬浮窗一致的圆点 */
+  #stage { position: relative; width: 360px; height: 360px; }
+  #dot {
+    position: absolute; left: 50%; top: 50%;
+    width: var(--dot-size); height: var(--dot-size);
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background:
+      radial-gradient(circle at 32% 28%, rgba(255,255,255,0.9), rgba(255,255,255,0) 42%),
+      linear-gradient(var(--grad-angle),
+        color-mix(in srgb, var(--theme) 62%, #ffffff) 0%,
+        var(--theme) 45%,
+        var(--theme2) 100%);
+    box-shadow:
+      0 0 18px color-mix(in srgb, var(--theme) 55%, transparent),
+      0 0 30px color-mix(in srgb, var(--theme2) 32%, transparent),
+      0 6px 20px rgba(0,0,0,0.45);
+    cursor: grab; z-index: 5;
+  }
+  #dot:active { cursor: grabbing; }
+
+  /* ===== 动画（与 src/renderer/floating/index.html 完全一致） ===== */
+  #dot .pulse { position: absolute; inset: 0; border-radius: 50%; display: none; pointer-events: none; }
+  .anim-pulse #dot .pulse {
+    display: block;
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--theme) 45%, transparent);
+    animation: pulse 2.6s infinite;
+  }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--theme) 45%, transparent); }
+    70% { box-shadow: 0 0 0 16px transparent; }
+    100% { box-shadow: 0 0 0 0 transparent; }
+  }
+  .anim-breathing #dot { animation: breathe 4.2s ease-in-out infinite; }
+  @keyframes breathe {
+    0%, 100% { transform: translate(-50%, -50%) scale(1); filter: brightness(1) saturate(1); }
+    50% { transform: translate(-50%, -50%) scale(1.07); filter: brightness(1.14) saturate(1.1); }
+  }
+  .anim-energy #dot .pulse {
+    display: block;
+    border: 2px solid color-mix(in srgb, var(--theme) 72%, #ffffff);
+    box-shadow: 0 0 12px color-mix(in srgb, var(--theme) 60%, transparent);
+    animation: energy-ring 2s cubic-bezier(.2,.6,.3,1) infinite;
+  }
+  .anim-energy #dot::after {
+    content: ''; position: absolute; inset: 0; border-radius: 50%;
+    border: 2px solid color-mix(in srgb, var(--theme2, var(--theme)) 72%, #ffffff);
+    box-shadow: 0 0 12px color-mix(in srgb, var(--theme2, var(--theme)) 55%, transparent);
+    display: block; pointer-events: none;
+    animation: energy-ring 2s cubic-bezier(.2,.6,.3,1) infinite;
+    animation-delay: 1s;
+  }
+  @keyframes energy-ring {
+    0% { transform: scale(1); opacity: 0.9; }
+    100% { transform: scale(1.95); opacity: 0; }
+  }
+  /* 无动画：什么都不显示 */
+
+  .controls { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  .controls button {
+    border: 1px solid rgba(255,255,255,0.18); background: rgba(255,255,255,0.06);
+    color: #e8ecf6; padding: 8px 16px; border-radius: 10px; font-size: 14px; cursor: pointer;
+  }
+  .controls button.active { background: var(--theme); border-color: var(--theme); color: #fff; }
+  .label { font-size: 13px; color: #aab3c5; }
+</style>
+</head>
+<body>
+  <div class="label">点下方按钮切换圆点动画（与设置 → 悬浮球 → 圆点动画 一致）</div>
+  <div id="stage"><div id="dot"><div class="pulse"></div></div></div>
+  <div class="controls">
+    <button data-anim="pulse" class="active">脉冲（默认）</button>
+    <button data-anim="breathing">呼吸</button>
+    <button data-anim="energy">能量环</button>
+    <button data-anim="none">无</button>
+  </div>
+
+  <script>
+    const btns = document.querySelectorAll('.controls button');
+    function setAnim(a) {
+      document.body.classList.remove('anim-pulse', 'anim-breathing', 'anim-energy', 'anim-none');
+      document.body.classList.add('anim-' + a);
+      btns.forEach(b => b.classList.toggle('active', b.dataset.anim === a));
+    }
+    btns.forEach(b => b.addEventListener('click', () => setAnim(b.dataset.anim)));
+    setAnim('pulse');
+  </script>
+</body>
+</html>

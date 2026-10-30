@@ -1,0 +1,66 @@
+{
+  "name": "floatdesk",
+  "version": "1.0.0",
+  "description": "FloatDesk - Mac 桌面悬浮快捷工作台（Electron）",
+  "main": "dist/main/main.js",
+  "author": "FloatDesk",
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc && node scripts/copy-assets.js",
+    "build:native": "bash scripts/build-native.sh",
+    "compile": "tsc --noEmit",
+    "start": "npm run build && electron .",
+    "dev": "npm run build && electron .",
+    "test": "npm run build && node --test dist/test/*.test.js",
+    "pack:intel": "npm run build && electron-builder --mac --x64",
+    "pack:arm": "npm run build && electron-builder --mac --arm64",
+    "dist": "npm run build && electron-builder --mac --x64 --publish=never",
+    "smoke": "npm run build && electron scripts/ui-smoke.js --no-sandbox --disable-gpu --user-data-dir=/tmp/fd-smoke",
+    "smoke:note": "npm run build && electron scripts/note-real-check.js --no-sandbox --disable-gpu",
+    "visual": "npm run build && electron scripts/visual-check.js --no-sandbox --disable-gpu --user-data-dir=/tmp/fd-visual-pro",
+    "probe": "npm run build && electron scripts/probe-check.js --no-sandbox --disable-gpu --user-data-dir=/tmp/fd-probe",
+    "shot": "npm run build && electron scripts/ui-shot.js --no-sandbox --disable-gpu --user-data-dir=/tmp/fd-shot /tmp/fd-items-shot.png",
+    "smoke:scenes": "npm run build && electron scripts/scenes-shot.js --no-sandbox --disable-gpu --user-data-dir=/tmp/fd-scenes",
+    "smoke:pos": "npm run build && electron scripts/float-pos-check.js --no-sandbox --disable-gpu",
+    "smoke:pill": "npm run build && electron scripts/linked-pill-check.js --no-sandbox --disable-gpu",
+    "smoke:bookmarks": "npm run build && electron scripts/bookmarks-import-check.js --no-sandbox --disable-gpu",
+    "smoke:notepages": "npm run build && electron scripts/note-pages-check.js --no-sandbox --disable-gpu"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "electron": "^34.0.0",
+    "electron-builder": "^25.1.0",
+    "typescript": "^5.5.4"
+  },
+  "build": {
+    "appId": "com.floatdesk.app",
+    "productName": "FloatDesk",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "bin",
+        "to": "bin"
+      }
+    ],
+    "asar": false,
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": "x64"
+        }
+      ],
+      "minimumSystemVersion": "10.15"
+    },
+    "dmg": {
+      "title": "FloatDesk ${version}"
+    }
+  }
+}

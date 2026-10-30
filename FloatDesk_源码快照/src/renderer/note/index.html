@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' file: data:; style-src 'unsafe-inline';" />
+    <title>便签</title>
+    <style>
+      :root {
+        /* --paper 由 app.ts 按配置写入，决定整张纸的颜色 */
+        --paper: #fff6c9;
+        --ink: #3a3226;
+        --ink-soft: #6b6152;
+        --line: color-mix(in srgb, var(--paper) 76%, #7a6a2a);
+        --chip: color-mix(in srgb, var(--paper) 90%, #000);
+        --chip-hi: color-mix(in srgb, var(--paper) 80%, #000);
+        --code-bg: color-mix(in srgb, var(--paper) 86%, #2a2418);
+      }
+      * { box-sizing: border-box; }
+      /* 细一点的滚动条，别把纸面切出一道白杠 */
+      ::-webkit-scrollbar { width: 8px; height: 8px; }
+      ::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--ink) 26%, transparent); border-radius: 4px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      html, body { margin: 0; height: 100%; overflow: hidden;
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif; }
+      /* 整张纸：边框 + 圆角 + 阴影，颜色跟随 --paper */
+      .paper { position: relative; height: 100%; display: flex; flex-direction: column; background: var(--paper);
+        border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+        box-shadow: 0 8px 24px rgba(0,0,0,.18); }
+
+      /* 头部：整条可拖动（无边框窗口靠它移动） */
+      .header { height: 32px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 6px 0 12px;
+        background: var(--chip); border-bottom: 1px solid var(--line); -webkit-app-region: drag; }
+      .header .title { font-size: 12px; font-weight: 700; color: var(--ink); }
+      .header .spacer { flex: 1; }
+      /* 拖动区里的按钮必须显式 no-drag，否则点不动 */
+      .header button { -webkit-app-region: no-drag; }
+
+      .iconbtn { background: transparent; border: 1px solid transparent; color: var(--ink); cursor: pointer;
+        border-radius: 7px; font-size: 12px; line-height: 1; padding: 4px 7px; }
+      .iconbtn:hover { background: var(--chip-hi); border-color: var(--line); }
+      .iconbtn:active { transform: translateY(1px); }
+
+      /* 标签栏：一组一张纸（像 Windows 便签的分页），每组一个颜色，＋ 号加一组。
+         ＋ 号固定在最右，不跟标签一起横向滚走（组多了还得能找到它） */
+      .tabs { flex: none; display: flex; align-items: flex-end; gap: 4px; padding: 5px 6px 0;
+        background: color-mix(in srgb, var(--paper) 92%, #000); border-bottom: 1px solid var(--line);
+        -webkit-app-region: no-drag; }
+      .tabs-scroll { flex: 1; min-width: 0; display: flex; align-items: flex-end; gap: 3px;
+        overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+      .tabs-scroll::-webkit-scrollbar { height: 0; }
+      .tab { flex: none; display: flex; align-items: center; gap: 5px; max-width: 132px;
+        padding: 3px 7px 4px; border-radius: 8px 8px 4px 4px; cursor: pointer; font-size: 11px;
+        color: var(--ink); border: 1px solid color-mix(in srgb, var(--tc) 46%, var(--paper));
+        background: color-mix(in srgb, var(--tc) 20%, var(--paper));
+        border-bottom-color: transparent; transition: background .12s ease, transform .12s ease; }
+      .tab:hover { background: color-mix(in srgb, var(--tc) 34%, var(--paper)); }
+      .tab.on { background: var(--tc); border-color: color-mix(in srgb, var(--tc) 62%, #000);
+        color: var(--tab-ink, #fff); font-weight: 600; }
+      .tab .tab-dot { width: 6px; height: 6px; border-radius: 50%; flex: none;
+        background: var(--tc); box-shadow: 0 0 0 1px rgba(0,0,0,.12) inset; }
+      .tab.on .tab-dot { background: var(--tab-ink, #fff); }
+      .tab .tab-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .tab .tab-x { flex: none; border: 0; background: transparent; color: inherit; cursor: pointer;
+        font-size: 11px; line-height: 1; padding: 1px 2px; border-radius: 4px; opacity: 0; }
+      .tab:hover .tab-x { opacity: .7; }
+      .tab .tab-x:hover { opacity: 1; background: rgba(0,0,0,.16); }
+      .tab-rename { width: 88px; font-size: 11px; color: #2b2418; border: 1px solid var(--line);
+        border-radius: 5px; padding: 1px 4px; background: #fff; }
+      .tab-add { flex: none; border: 1px dashed color-mix(in srgb, var(--ink) 35%, var(--paper));
+        background: transparent; color: var(--ink); cursor: pointer; border-radius: 8px;
+        font-size: 12px; line-height: 1; padding: 4px 7px; margin-bottom: 2px; opacity: .75; }
+      .tab-add:hover { opacity: 1; background: var(--chip-hi); }
+      /* 已经到上限（20 组）→ ＋ 变灰，点不动 */
+      .tab-add:disabled { opacity: .28; cursor: default; }
+
+      /* 格式工具栏 */
+      .toolbar { flex: none; display: flex; align-items: center; gap: 3px; padding: 4px 8px;
+        background: color-mix(in srgb, var(--paper) 95%, #000); border-bottom: 1px solid var(--line);
+        flex-wrap: wrap; }
+      .tbtn { background: transparent; border: 1px solid transparent; color: var(--ink); cursor: pointer;
+        border-radius: 6px; font-size: 12px; line-height: 1; padding: 4px 7px; min-width: 26px; }
+      .tbtn:hover { background: var(--chip-hi); border-color: var(--line); }
+      .tbtn:active { transform: translateY(1px); }
+      .tbtn.b { font-weight: 800; }
+      .tbtn.i { font-style: italic; font-family: Georgia, serif; }
+      .tbtn.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+      .tbtn.s { text-decoration: line-through; font-weight: 700; }
+      .tbtn.on { background: var(--chip-hi); border-color: var(--line); }
+      .tsep { width: 1px; height: 14px; background: var(--line); margin: 0 3px; }
+
+      /* 正文：contenteditable 而不是 textarea，才能有加粗/列表/代码块 */
+      #editor { flex: 1; overflow: auto; outline: none; padding: 8px 12px; color: var(--ink);
+        line-height: 1.6; font-size: 14px; word-break: break-word;
+        -webkit-user-select: text; user-select: text; }
+      #editor:empty:before { content: attr(data-ph); color: color-mix(in srgb, var(--ink) 38%, var(--paper)); }
+      #editor p, #editor div { margin: 0 0 2px; }
+      #editor b, #editor strong { font-weight: 700; }
+      /* 划线：execCommand('strikeThrough') 在 Chromium 里产出的是 <strike>，
+         粘贴进来的内容可能是 <s>/<del>/内联样式，三种都画上线。
+         线要画得清楚（1.5px），字稍微淡一点 —— 一眼看出"这行已经做完了" */
+      #editor s, #editor strike, #editor del,
+      .hprev-body s, .hprev-body strike, .hprev-body del {
+        text-decoration: line-through; text-decoration-thickness: 1.5px; opacity: .62;
+      }
+      #editor [style*="line-through"], .hprev-body [style*="line-through"] { text-decoration: line-through; }
+      #editor ul, #editor ol { margin: 2px 0 4px; padding-left: 22px; }
+      #editor li { margin: 1px 0; }
+      /* 行内代码 */
+      #editor code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .92em;
+        background: var(--code-bg); border-radius: 4px; padding: 1px 4px;
+        border: 1px solid color-mix(in srgb, var(--paper) 70%, #6a5c33); }
+      /* 代码块：右上角浮动「复制」按钮（按钮不进正文，存盘前会被剔掉） */
+      #editor pre { position: relative; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: .9em; line-height: 1.5; white-space: pre-wrap; word-break: break-word;
+        background: var(--code-bg); border: 1px solid color-mix(in srgb, var(--paper) 70%, #6a5c33);
+        border-radius: 8px; padding: 8px 10px; margin: 6px 0; }
+      #editor pre code { background: none; border: 0; padding: 0; font-size: inherit; }
+      .code-copy { position: absolute; top: 5px; right: 5px; -webkit-app-region: no-drag;
+        background: color-mix(in srgb, var(--paper) 92%, #000); color: var(--ink);
+        border: 1px solid color-mix(in srgb, var(--paper) 70%, #6a5c33); border-radius: 6px;
+        font-size: 10px; line-height: 1; padding: 3px 7px; cursor: pointer; opacity: .55;
+        transition: opacity .15s ease, background .15s ease; }
+      #editor pre:hover .code-copy { opacity: 1; }
+      .code-copy:hover { background: color-mix(in srgb, var(--paper) 80%, #000); }
+      .code-copy.done { background: #1f9a5b; color: #fff; border-color: #1f9a5b; opacity: 1; }
+
+      .footer { flex: none; padding: 6px 10px 8px; display: flex; flex-direction: column; gap: 6px;
+        background: color-mix(in srgb, var(--paper) 93%, #000); border-top: 1px solid var(--line); }
+      .footrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 11px; color: var(--ink-soft); }
+      .swatches { display: flex; gap: 5px; }
+      .swatch { width: 18px; height: 18px; border-radius: 6px; cursor: pointer; padding: 0;
+        border: 1px solid rgba(0,0,0,.25); }
+      .swatch.on { border: 2px solid #7a6a2a; }
+      .slider { width: 100px; accent-color: #b08a2a; }
+      input[type=color] { width: 26px; height: 20px; border: 1px solid rgba(0,0,0,.25); border-radius: 5px;
+        background: transparent; padding: 0; }
+      #saved { margin-left: auto; color: #4e8a52; opacity: 0; transition: opacity .25s ease; }
+      #saved.show { opacity: 1; }
+
+      /* 历史：盖在纸上的一层面板（左边一列版本，点开右边预览，确认了再恢复） */
+      .hist { position: absolute; inset: 32px 0 0 0; background: color-mix(in srgb, var(--paper) 96%, #fff);
+        display: none; flex-direction: column; padding: 8px 10px 10px; z-index: 5; }
+      .hist.show { display: flex; }
+      .hist-head { flex: none; display: flex; align-items: center; gap: 7px; margin-bottom: 7px; }
+      .hist-head h4 { margin: 0; font-size: 13px; color: var(--ink); }
+      .hist-head .hist-sub { font-size: 10px; color: var(--ink-soft); }
+      .hist-head .spacer { flex: 1; }
+      .hist-list { flex: 1; overflow: auto; }
+      .hist .item { border: 1px solid var(--line); border-radius: 8px; cursor: pointer;
+        padding: 7px 9px; margin-bottom: 7px; background: color-mix(in srgb, var(--paper) 98%, #fff);
+        transition: background .12s ease, border-color .12s ease; }
+      .hist .item:hover { background: var(--chip-hi); }
+      .hist .item.on { border-color: color-mix(in srgb, var(--ink) 45%, var(--paper));
+        background: var(--chip-hi); }
+      .hist .meta { font-size: 10px; color: var(--ink-soft); margin-bottom: 3px;
+        display: flex; gap: 7px; align-items: center; }
+      .hist .meta b { color: var(--ink); font-size: 11px; }
+      .hist .prev { font-size: 11px; color: var(--ink); white-space: pre-wrap; word-break: break-all;
+        max-height: 34px; overflow: hidden; opacity: .85; }
+      .hist .empty { font-size: 11px; color: var(--ink-soft); padding: 16px 4px; text-align: center; }
+
+      /* 预览层：先看渲染后的样子，再决定恢复 */
+      .hprev { position: absolute; inset: 0; display: none; flex-direction: column;
+        background: color-mix(in srgb, var(--paper) 99%, #fff); z-index: 6; }
+      .hprev.show { display: flex; }
+      .hprev-head { flex: none; display: flex; align-items: center; gap: 6px; padding: 7px 9px;
+        border-bottom: 1px solid var(--line); font-size: 11px; color: var(--ink-soft); }
+      .hprev-head .spacer { flex: 1; }
+      .hprev-head button { cursor: pointer; border-radius: 6px; font-size: 11px; padding: 3px 8px;
+        border: 1px solid var(--line); background: var(--chip); color: var(--ink); }
+      .hprev-head button:hover { background: var(--chip-hi); }
+      .hprev-head .hprev-do { background: #b08a2a; border-color: #8f6f1e; color: #fff; }
+      .hprev-head .hprev-do:hover { background: #9c7a24; }
+      .hprev-body { flex: 1; overflow: auto; padding: 8px 12px; font-size: 13px; line-height: 1.6;
+        color: var(--ink); word-break: break-word; }
+      .hprev-body p, .hprev-body div { margin: 0 0 2px; }
+      .hprev-body b, .hprev-body strong { font-weight: 700; }
+      .hprev-body ul, .hprev-body ol { margin: 2px 0 4px; padding-left: 22px; }
+      .hprev-body code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .92em;
+        background: var(--code-bg); border-radius: 4px; padding: 1px 4px; }
+      .hprev-body pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .9em;
+        white-space: pre-wrap; word-break: break-word; background: var(--code-bg);
+        border: 1px solid color-mix(in srgb, var(--paper) 70%, #6a5c33); border-radius: 8px;
+        padding: 8px 10px; margin: 6px 0; }
+      .hprev-body pre code { background: none; border: 0; padding: 0; }
+      .hprev-body .empty { color: var(--ink-soft); font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <div class="paper">
+      <div class="header">
+        <span class="title" id="note-title">便签</span>
+        <span class="spacer"></span>
+        <button class="iconbtn" id="btn-hist" type="button" title="历史版本（可先预览再恢复）">历史</button>
+        <button class="iconbtn" id="btn-close" type="button" title="收起便签">×</button>
+      </div>
+
+      <!-- 多组标签：一组一张纸，＋ 号再加一组（颜色自动排，双击名字可改名） -->
+      <div class="tabs">
+        <div class="tabs-scroll" id="tabs"></div>
+        <button class="tab-add" id="tab-add" type="button" title="加一组标签">＋</button>
+      </div>
+
+      <div class="toolbar">
+        <button class="tbtn b" id="tb-bold" type="button" title="加粗（⌘B）">B</button>
+        <button class="tbtn i" id="tb-italic" type="button" title="斜体（⌘I）">I</button>
+        <button class="tbtn s" id="tb-strike" type="button" title="划线（⌘⇧X）—— 标已经做完的事">S</button>
+        <button class="tbtn mono" id="tb-code" type="button" title="行内代码">{ }</button>
+        <button class="tbtn mono" id="tb-codeblock" type="button" title="代码块（带复制按钮）">▤</button>
+        <span class="tsep"></span>
+        <button class="tbtn" id="tb-ol" type="button" title="有序列表（1. 2. 3.）">1.</button>
+        <button class="tbtn" id="tb-ul" type="button" title="无序列表（• • •）">•</button>
+        <span class="tsep"></span>
+        <button class="tbtn" id="tb-clear" type="button" title="清除格式">清除</button>
+      </div>
+
+      <div id="editor" contenteditable="true" data-ph="写点什么…（自动保存）" spellcheck="false"></div>
+
+      <div class="footer">
+        <div class="footrow">
+          <span>颜色</span>
+          <div class="swatches" id="swatches"></div>
+          <input type="color" id="color-more" title="自定义颜色" />
+        </div>
+        <div class="footrow">
+          <span>透明度</span>
+          <input class="slider" type="range" id="opacity" min="30" max="100" step="1" />
+          <span>字号</span>
+          <input class="slider" type="range" id="fontsize" min="10" max="28" step="1" />
+          <span id="saved">已保存</span>
+        </div>
+      </div>
+
+      <div class="hist" id="hist">
+        <div class="hist-head">
+          <h4>历史版本</h4>
+          <span class="hist-sub" id="hist-sub"></span>
+          <span class="spacer"></span>
+          <button class="iconbtn" id="hist-close" type="button">收起</button>
+        </div>
+        <div class="hist-list" id="hist-list"></div>
+        <!-- 预览层：点某一版先把渲染结果铺开看，确认再点「恢复这一版」 -->
+        <div class="hprev" id="hprev">
+          <div class="hprev-head">
+            <span id="hprev-title"></span>
+            <span class="spacer"></span>
+            <button id="hprev-back" type="button">返回</button>
+            <button class="hprev-do" id="hprev-do" type="button">恢复这一版</button>
+          </div>
+          <div class="hprev-body" id="hprev-body"></div>
+        </div>
+      </div>
+    </div>
+    <script src="app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' file: http: https: data:; style-src 'unsafe-inline';" />
+    <title>FloatDesk 图片预览</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #0b0d16; color: #e8ecf6;
+        font-family: -apple-system, "PingFang SC", sans-serif; overflow: hidden; }
+      #wrap { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 16px; }
+      img { max-width: 100%; max-height: 100%; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.5); }
+      #err { display: none; text-align: center; color: #ff9a9a; font-size: 14px; padding: 20px; }
+      #bar { position: absolute; top: 10px; left: 12px; right: 12px; display: flex; gap: 8px;
+        align-items: center; font-size: 12px; color: #9aa3b8; }
+      #bar a { color: #6ea8ff; }
+    </style>
+  </head>
+  <body>
+    <div id="bar"></div>
+    <div id="wrap"><img id="img" alt="preview" /><div id="err">图片加载失败。<br />本地图片路径可能不存在，或远程图片被网络/协议限制。</div></div>
+    <script src="app.js"></script>
+  </body>
+</html>
